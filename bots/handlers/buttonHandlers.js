@@ -131,55 +131,152 @@ async function getAllLogs(bot, chatId, messageId, count, type) {
     }
 
     const formattedLogs = getLogs
-      .map(
-        (log) =>
-          `🆔 ID: ${log.id}
-👤 Email: ${log.email}
-📋 Method: ${log.method}
-📦 Payload: ${log.payload.substring(0, 50)}${
-            log.payload.length > 50 ? "..." : ""
-          }
-📍 From: ${log.from}
-✅ Status: ${log.status}
-${
-  log.error
-    ? `❌ Error: ${log.error.substring(0, 50)}${
-        log.error.length > 50 ? "..." : ""
-      }`
-    : ""
-}
-────────────────────`
-      )
+      .map((log, index) => {
+        // Форматируем payload с кодом
+        const formattedPayload = log.payload
+          ? `\`\`\`json\n${JSON.stringify(
+              JSON.parse(log.payload),
+              null,
+              2
+            )}\n\`\`\``
+          : "*No payload*";
+
+        // Форматируем error с кодом
+        const formattedError = log.error
+          ? `\`\`\`\n${log.error}\n\`\`\``
+          : "*No errors*";
+
+        return `🔸 **Log #${index + 1}**
+┌─────────────────────────────
+│ 🆔 **ID:** ${log.id}
+│ 👤 **Email:** ${log.email || "*No email*"}
+│ 📋 **Method:** ${log.method}
+│ 📍 **From:** ${log.from}
+│ ✅ **Status:** ${log.status}
+│ 
+│ 📦 **Payload:**
+${formattedPayload}
+│ 
+│ ❌ **Error:**
+${formattedError}
+└─────────────────────────────
+`;
+      })
       .join("\n");
 
     const countText = count === "all" ? "все" : count;
     const typeText = type === "all" ? "всех типов" : type;
 
-    const text = `📊 Логи (${countText} ${typeText}):\n\n${formattedLogs}`;
+    const text = `📊 **Логи сервера** (${countText} ${typeText})\n\n${formattedLogs}`;
 
-    bot.editMessageText(text, {
-      chat_id: chatId,
-      message_id: messageId,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
-          [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
-        ],
-      },
-    });
+    // Разбиваем сообщение на части если оно слишком длинное
+    if (text.length > 4000) {
+      const messageParts = [];
+      let currentPart = "";
+      const lines = text.split("\n");
+
+      for (const line of lines) {
+        if (currentPart.length + line.length + 1 > 4000) {
+          messageParts.push(currentPart);
+          currentPart = line + "\n";
+        } else {
+          currentPart += line + "\n";
+        }
+      }
+
+      if (currentPart) {
+        messageParts.push(currentPart);
+      }
+
+      // Отправляем первую часть с кнопками
+      await bot.editMessageText(messageParts[0], {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
+          ],
+        },
+      });
+
+      // Отправляем остальные части
+      for (let i = 1; i < messageParts.length; i++) {
+        await bot.sendMessage(chatId, messageParts[i], {
+          parse_mode: "Markdown",
+        });
+      }
+    } else {
+      bot.editMessageText(text, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
+          ],
+        },
+      });
+    }
   } catch (error) {
     console.error("Error getting logs:", error);
-    bot.editMessageText("❌ Ошибка при получении логов", {
-      chat_id: chatId,
-      message_id: messageId,
-      reply_markup: {
-        inline_keyboard: [
-          [{ text: "🔄 Попробовать снова", callback_data: "get_logs" }],
-          [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
-        ],
-      },
-    });
+
+    // Упрощенное форматирование payload если есть ошибка парсинга JSON
+    if (error.message.includes("JSON")) {
+      const getLogs = await Logs.getAllLogs({
+        count: count === "all" ? null : parseInt(count),
+        type: type === "all" ? null : type,
+      });
+
+      const simplifiedLogs = getLogs
+        .map((log, index) => {
+          return `🔸 **Log #${index + 1}**
+┌─────────────────────────────
+│ 🆔 **ID:** ${log.id}
+│ 👤 **Email:** ${log.email || "*No email*"}
+│ 📋 **Method:** ${log.method}
+│ 📍 **From:** ${log.from}
+│ ✅ **Status:** ${log.status}
+│ 
+│ 📦 **Payload:**
+\`\`\`\n${log.payload}\n\`\`\`
+│ 
+│ ❌ **Error:**
+\`\`\`\n${log.error || "No errors"}\n\`\`\`
+└─────────────────────────────
+`;
+        })
+        .join("\n");
+
+      const countText = count === "all" ? "все" : count;
+      const typeText = type === "all" ? "всех типов" : type;
+      const text = `📊 **Логи сервера** (${countText} ${typeText})\n\n${simplifiedLogs}`;
+
+      bot.editMessageText(text, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
+          ],
+        },
+      });
+    } else {
+      bot.editMessageText("❌ Ошибка при получении логов", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Попробовать снова", callback_data: "get_logs" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
+          ],
+        },
+      });
+    }
   }
 }
 
