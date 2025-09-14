@@ -1,5 +1,7 @@
 const Logs = require("../../models/Logs");
 
+const pool = require("../../config/db");
+
 function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
   // Храним выбранное количество для каждого пользователя
   const userSelections = new Map();
@@ -56,6 +58,14 @@ function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
 
       case data === "main_menu":
         handleMainMenu(bot, chatId, messageId);
+        break;
+
+      case data === "memory_stats":
+        handleMemoryStats(bot, chatId, messageId);
+        break;
+
+      case data === "cpu_stats":
+        handleCpuStats(bot, chatId, messageId);
         break;
 
       default:
@@ -281,21 +291,238 @@ Error: ${
   }
 }
 
-function handleStatus(bot, chatId, messageId) {
-  const text = `🖥️ Статус сервера:\n✅ Работает\n📊 Порт: ${
-    process.env.PORT || 3000
-  }`;
+async function handleStatus(bot, chatId, messageId) {
+  try {
+    const os = require("os");
+    const process = require("process");
 
-  bot.editMessageText(text, {
-    chat_id: chatId,
-    message_id: messageId,
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🔄 Обновить", callback_data: "get_status" }],
-        [{ text: "↩️ Назад", callback_data: "main_menu" }],
-      ],
-    },
-  });
+    // Получаем базовую статистику логов
+    let logsStats = { total: 0, success: 0, error: 0 };
+    try {
+      // Простой запрос для подсчета логов
+      const [allLogs] = await pool.query(
+        "SELECT COUNT(*) as total FROM be_pay_logs"
+      );
+      const [successLogs] = await pool.query(
+        "SELECT COUNT(*) as success FROM be_pay_logs WHERE status = 'success'"
+      );
+      const [errorLogs] = await pool.query(
+        "SELECT COUNT(*) as error FROM be_pay_logs WHERE status = 'error'"
+      );
+
+      logsStats = {
+        total: allLogs[0].total,
+        success: successLogs[0].success,
+        error: errorLogs[0].error,
+      };
+    } catch (dbError) {
+      console.error("Database stats error:", dbError);
+    }
+
+    // Статистика памяти
+    const totalMemGB = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+    const freeMemGB = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+    const usedMemGB = (totalMemGB - freeMemGB).toFixed(1);
+    const memoryUsagePercent = ((usedMemGB / totalMemGB) * 100).toFixed(1);
+
+    // Использование памяти процессом
+    const memoryUsage = process.memoryUsage();
+    const rssMB = (memoryUsage.rss / 1024 / 1024).toFixed(1);
+    const heapTotalMB = (memoryUsage.heapTotal / 1024 / 1024).toFixed(1);
+    const heapUsedMB = (memoryUsage.heapUsed / 1024 / 1024).toFixed(1);
+
+    // Нагрузка CPU
+    const loadAverage = os.loadavg();
+    const cpuLoad = loadAverage[0].toFixed(2); // 1-minute average
+
+    // Время работы системы и процесса
+    const systemUptime = formatUptime(os.uptime());
+    const processUptime = formatUptime(process.uptime());
+
+    // Информация о процессе
+    const nodeVersion = process.version;
+    const platform = `${os.platform()} ${os.arch()}`;
+
+    const text = `
+🖥️ <b>СТАТИСТИКА СЕРВЕРА</b>
+┌─────────────────────────────
+│ <b>📊 СТАТИСТИКА ЛОГОВ:</b>
+│ 📈 <b>Всего логов:</b> ${logsStats.total}
+│ ✅ <b>Успешных:</b> ${logsStats.success}
+│ ❌ <b>Ошибок:</b> ${logsStats.error}
+│ 📊 <b>Процент успеха:</b> ${
+      logsStats.total > 0
+        ? ((logsStats.success / logsStats.total) * 100).toFixed(1)
+        : 0
+    }%
+│ 
+│ <b>💾 ПАМЯТЬ СИСТЕМЫ:</b>
+│ 🗃️ <b>Всего:</b> ${totalMemGB} GB
+│ 💽 <b>Использовано:</b> ${usedMemGB} GB
+│ 💿 <b>Свободно:</b> ${freeMemGB} GB
+│ 📊 <b>Использование:</b> ${memoryUsagePercent}%
+│ 
+│ <b>🔧 ПАМЯТЬ ПРОЦЕССА:</b>
+│ 📋 <b>RSS:</b> ${rssMB} MB
+│ 🗂️ <b>Heap Total:</b> ${heapTotalMB} MB
+│ 📝 <b>Heap Used:</b> ${heapUsedMB} MB
+│ 
+│ <b>⚡ НАГРУЗКА CPU:</b>
+│ 🔄 <b>Нагрузка (1min):</b> ${cpuLoad}
+│ 
+│ <b>⏰ ВРЕМЯ РАБОТЫ:</b>
+│ 🖥️ <b>Системы:</b> ${systemUptime}
+│ 🚀 <b>Процесса:</b> ${processUptime}
+│ 
+│ <b>📋 ИНФОРМАЦИЯ:</b>
+│ 🟢 <b>Node.js:</b> ${nodeVersion}
+│ 🖥️ <b>Платформа:</b> ${platform}
+│ 📡 <b>Порт:</b> ${process.env.PORT || 3000}
+│ 📝 <b>Окружение:</b> ${process.env.NODE_ENV || "development"}
+└─────────────────────────────
+    `.trim();
+
+    await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "🔄 Обновить", callback_data: "get_status" },
+            { text: "📊 Логи", callback_data: "get_logs" },
+          ],
+          [
+            { text: "💾 Память", callback_data: "memory_stats" },
+            { text: "⚡ CPU", callback_data: "cpu_stats" },
+          ],
+          [{ text: "↩️ Назад", callback_data: "main_menu" }],
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Error getting status:", error);
+
+    const fallbackText = `
+🖥️ <b>СТАТИСТИКА СЕРВЕРА</b>
+┌─────────────────────────────
+│ ✅ <b>Статус:</b> Работает
+│ 📊 <b>Порт:</b> <code>${process.env.PORT || 3000}</code>
+│ ⏰ <b>Время:</b> ${new Date().toLocaleString("ru-RU")}
+│ 💾 <b>Память:</b> ${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(
+      2
+    )} MB
+└─────────────────────────────
+
+❌ <i>Не удалось загрузить полную статистику: ${error.message}</i>
+    `.trim();
+
+    await bot.editMessageText(fallbackText, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Попробовать снова", callback_data: "get_status" }],
+          [{ text: "↩️ Назад", callback_data: "main_menu" }],
+        ],
+      },
+    });
+  }
+}
+
+// Вспомогательная функция для форматирования времени
+function formatUptime(seconds) {
+  const days = Math.floor(seconds / (24 * 60 * 60));
+  const hours = Math.floor((seconds % (24 * 60 * 60)) / (60 * 60));
+  const minutes = Math.floor((seconds % (60 * 60)) / 60);
+
+  if (days > 0) return `${days}д ${hours}ч ${minutes}м`;
+  if (hours > 0) return `${hours}ч ${minutes}м`;
+  return `${minutes}м`;
+}
+
+async function handleMemoryStats(bot, chatId, messageId) {
+  try {
+    const os = require("os");
+    const process = require("process");
+
+    const memoryUsage = process.memoryUsage();
+    const totalMemGB = (os.totalmem() / 1024 / 1024 / 1024).toFixed(1);
+    const freeMemGB = (os.freemem() / 1024 / 1024 / 1024).toFixed(1);
+
+    const text = `
+💾 <b>ДЕТАЛЬНАЯ СТАТИСТИКА ПАМЯТИ</b>
+┌─────────────────────────────
+│ <b>Системная память:</b>
+│ 🗃️ <b>Всего:</b> ${totalMemGB} GB
+│ 💿 <b>Свободно:</b> ${freeMemGB} GB
+│ 📊 <b>Использование:</b> ${((1 - freeMemGB / totalMemGB) * 100).toFixed(1)}%
+│ 
+│ <b>Память процесса:</b>
+│ 📋 <b>RSS:</b> ${(memoryUsage.rss / 1024 / 1024).toFixed(1)} MB
+│ 🗂️ <b>Heap Total:</b> ${(memoryUsage.heapTotal / 1024 / 1024).toFixed(1)} MB
+│ 📝 <b>Heap Used:</b> ${(memoryUsage.heapUsed / 1024 / 1024).toFixed(1)} MB
+│ 🔷 <b>External:</b> ${(memoryUsage.external / 1024 / 1024).toFixed(1)} MB
+│ 📚 <b>Array Buffers:</b> ${(memoryUsage.arrayBuffers / 1024 / 1024).toFixed(
+      1
+    )} MB
+└─────────────────────────────
+    `.trim();
+
+    await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Обновить", callback_data: "memory_stats" }],
+          [{ text: "↩️ Назад к статистике", callback_data: "get_status" }],
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Error getting memory stats:", error);
+  }
+}
+
+async function handleCpuStats(bot, chatId, messageId) {
+  try {
+    const os = require("os");
+
+    const loadAverage = os.loadavg();
+    const cpus = os.cpus();
+    const cpuModel = cpus[0].model;
+
+    const text = `
+⚡ <b>СТАТИСТИКА CPU</b>
+┌─────────────────────────────
+│ <b>Нагрузка системы:</b>
+│ 🔄 <b>1 минута:</b> ${loadAverage[0].toFixed(2)}
+│ 🔄 <b>5 минут:</b> ${loadAverage[1].toFixed(2)}
+│ 🔄 <b>15 минут:</b> ${loadAverage[2].toFixed(2)}
+│ 
+│ <b>Информация о CPU:</b>
+│ 🖥️ <b>Модель:</b> ${cpuModel}
+│ 📊 <b>Ядер:</b> ${cpus.length}
+│ ⚡ <b>Частота:</b> ${(cpus[0].speed / 1000).toFixed(1)} GHz
+└─────────────────────────────
+    `.trim();
+
+    await bot.editMessageText(text, {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Обновить", callback_data: "cpu_stats" }],
+          [{ text: "↩️ Назад к статистике", callback_data: "get_status" }],
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Error getting CPU stats:", error);
+  }
 }
 
 function handleTestLog(bot, chatId, messageId, sendLog) {
@@ -348,9 +575,6 @@ function handleMainMenu(bot, chatId, messageId) {
       inline_keyboard: [
         [{ text: "📊 Получить логи", callback_data: "get_logs" }],
         [{ text: "🖥️ Статус сервера", callback_data: "get_status" }],
-        [{ text: "📨 Тест лога", callback_data: "test_log" }],
-        [{ text: "✅ Подписаться", callback_data: "subscribe" }],
-        [{ text: "❌ Отписаться", callback_data: "unsubscribe" }],
       ],
     },
   });
@@ -365,9 +589,6 @@ function createMainMenu(bot, chatId) {
       inline_keyboard: [
         [{ text: "📊 Получить логи", callback_data: "get_logs" }],
         [{ text: "🖥️ Статус сервера", callback_data: "get_status" }],
-        [{ text: "📨 Тест лога", callback_data: "test_log" }],
-        [{ text: "✅ Подписаться", callback_data: "subscribe" }],
-        [{ text: "❌ Отписаться", callback_data: "unsubscribe" }],
       ],
     },
   });
