@@ -1,5 +1,6 @@
 const Logs = require("../../models/Logs");
-
+const fs = require("fs");
+const path = require("path");
 const pool = require("../../config/db");
 
 function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
@@ -42,6 +43,23 @@ function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
 
       case data === "get_logs":
         selectLogsCount(bot, chatId, messageId);
+        break;
+
+      // Добавьте в switch-case обработчиков
+      case data === "export_menu":
+        handleExportMenu(bot, chatId, messageId);
+        break;
+
+      case data === "export_all":
+        exportLogs(bot, chatId, messageId, "all");
+        break;
+
+      case data === "export_success":
+        exportLogs(bot, chatId, messageId, "success");
+        break;
+
+      case data === "export_errors":
+        exportLogs(bot, chatId, messageId, "error");
         break;
 
       case data === "test_log":
@@ -564,7 +582,6 @@ function handleUnsubscribe(bot, chatId, messageId, logSubscribers) {
     },
   });
 }
-
 function handleMainMenu(bot, chatId, messageId) {
   const text = "🤖 Главное меню:";
 
@@ -573,8 +590,29 @@ function handleMainMenu(bot, chatId, messageId) {
     message_id: messageId,
     reply_markup: {
       inline_keyboard: [
-        [{ text: "📊 Получить логи", callback_data: "get_logs" }],
+        [
+          { text: "📊 Получить логи", callback_data: "get_logs" },
+          { text: "💾 Экспорт логов", callback_data: "export_menu" },
+        ],
         [{ text: "🖥️ Статус сервера", callback_data: "get_status" }],
+        [],
+      ],
+    },
+  });
+}
+
+function handleExportMenu(bot, chatId, messageId) {
+  const text = "💾 Выберите тип экспорта:";
+
+  bot.editMessageText(text, {
+    chat_id: chatId,
+    message_id: messageId,
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "📋 Все логи", callback_data: "export_all" }],
+        [{ text: "✅ Успешные логи", callback_data: "export_success" }],
+        [{ text: "❌ Логи с ошибками", callback_data: "export_errors" }],
+        [{ text: "↩️ Назад", callback_data: "main_menu" }],
       ],
     },
   });
@@ -598,3 +636,187 @@ module.exports = {
   registerButtonHandlers,
   createMainMenu,
 };
+
+async function exportLogs(bot, chatId, messageId, type) {
+  try {
+    // Показываем сообщение о начале экспорта
+    await bot.editMessageText("⏳ Подготавливаем файл для экспорта...", {
+      chat_id: chatId,
+      message_id: messageId,
+    });
+
+    // Получаем логи из базы данных
+    let logs;
+    switch (type) {
+      case "success":
+        logs = await Logs.getAllLogs({ type: "success" });
+        break;
+      case "error":
+        logs = await Logs.getAllLogs({ type: "error" });
+        break;
+      default:
+        logs = await Logs.getAllLogs();
+    }
+
+    if (!logs || logs.length === 0) {
+      await bot.editMessageText("📭 Нет логов для экспорта", {
+        chat_id: chatId,
+        message_id: messageId,
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "↩️ Назад", callback_data: "export_menu" }],
+          ],
+        },
+      });
+      return;
+    }
+
+    // Создаем временную папку если не существует
+    const tempDir = path.join(__dirname, "..", "..", "temp");
+    if (!fs.existsSync(tempDir)) {
+      fs.mkdirSync(tempDir, { recursive: true });
+    }
+
+    // Создаем файлы в разных форматах
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const filenameBase = `logs_${type}_${timestamp}`;
+
+    // JSON файл
+    const jsonFilename = `${filenameBase}.json`;
+    const jsonPath = path.join(tempDir, jsonFilename);
+    fs.writeFileSync(jsonPath, JSON.stringify(logs, null, 2));
+
+    // CSV файл
+    const csvFilename = `${filenameBase}.csv`;
+    const csvPath = path.join(tempDir, csvFilename);
+    const csvContent = convertToCSV(logs);
+    fs.writeFileSync(csvPath, csvContent);
+
+    // TXT файл
+    const txtFilename = `${filenameBase}.txt`;
+    const txtPath = path.join(tempDir, txtFilename);
+    const txtContent = convertToTXT(logs);
+    fs.writeFileSync(txtPath, txtContent);
+
+    // Отправляем файлы пользователю
+    const typeText = {
+      all: "все логи",
+      success: "успешные логи",
+      error: "логи с ошибками",
+    }[type];
+
+    await bot.sendMessage(
+      chatId,
+      `✅ Экспорт завершен! ${logs.length} ${typeText}`
+    );
+
+    // Отправляем JSON файл
+    await bot.sendDocument(chatId, jsonPath, {
+      caption: `📊 ${logs.length} ${typeText} (JSON)`,
+    });
+
+    // Отправляем CSV файл
+    await bot.sendDocument(chatId, csvPath, {
+      caption: `📈 ${logs.length} ${typeText} (CSV)`,
+    });
+
+    // Отправляем TXT файл
+    await bot.sendDocument(chatId, txtPath, {
+      caption: `📝 ${logs.length} ${typeText} (TXT)`,
+    });
+
+    // Очищаем временные файлы
+    setTimeout(() => {
+      [jsonPath, csvPath, txtPath].forEach((filePath) => {
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+      });
+    }, 30000);
+
+    // Показываем меню экспорта
+    await bot.sendMessage(chatId, "💾 Выберите тип экспорта:", {
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "📋 Все логи", callback_data: "export_all" }],
+          [{ text: "✅ Успешные логи", callback_data: "export_success" }],
+          [{ text: "❌ Логи с ошибками", callback_data: "export_errors" }],
+          [{ text: "↩️ Назад в меню", callback_data: "main_menu" }],
+        ],
+      },
+    });
+  } catch (error) {
+    console.error("Error exporting logs:", error);
+
+    await bot.editMessageText("❌ Ошибка при экспорте логов", {
+      chat_id: chatId,
+      message_id: messageId,
+      reply_markup: {
+        inline_keyboard: [
+          [{ text: "🔄 Попробовать снова", callback_data: `export_${type}` }],
+          [{ text: "↩️ Назад", callback_data: "export_menu" }],
+        ],
+      },
+    });
+  }
+}
+
+// Функция конвертации в CSV
+function convertToCSV(logs) {
+  if (!logs || logs.length === 0) return "";
+
+  const headers = [
+    "ID",
+    "Email",
+    "Method",
+    "From",
+    "Status",
+    "Payload",
+    "Error",
+    "Created_At",
+  ];
+  const csvRows = [headers.join(",")];
+
+  logs.forEach((log) => {
+    const row = [
+      log.id,
+      `"${log.email || ""}"`,
+      `"${log.method || ""}"`,
+      `"${log.from || ""}"`,
+      `"${log.status || ""}"`,
+      `"${(log.payload || "").replace(/"/g, '""')}"`,
+      `"${(log.error || "").replace(/"/g, '""')}"`,
+      `"${log.created_at || new Date().toISOString()}"`,
+    ];
+    csvRows.push(row.join(","));
+  });
+
+  return csvRows.join("\n");
+}
+
+// Функция конвертации в TXT
+function convertToTXT(logs) {
+  if (!logs || logs.length === 0) return "No logs found";
+
+  return logs
+    .map((log, index) => {
+      return `
+🔸 LOG ${index + 1}
+────────────────
+🆔 ID: ${log.id}
+👤 Email: ${log.email || "N/A"}
+📋 Method: ${log.method}
+📍 From: ${log.from}
+✅ Status: ${log.status}
+⏰ Created: ${log.created_at || "N/A"}
+
+📦 Payload:
+${log.payload || "No payload"}
+
+❌ Error:
+${log.error || "No errors"}
+─────────────────────────────────────
+    `.trim();
+    })
+    .join("\n\n");
+}
