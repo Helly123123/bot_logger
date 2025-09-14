@@ -67,16 +67,17 @@ function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
 }
 
 function selectLogsCount(bot, chatId, messageId) {
-  const text = "📊 Выберите количество логов:";
+  const text = `📊 Выберите количество логов:`;
 
   bot.editMessageText(text, {
     chat_id: chatId,
     message_id: messageId,
+    parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
-        [{ text: "3 лога", callback_data: "select_count_3" }],
         [{ text: "5 логов", callback_data: "select_count_5" }],
         [{ text: "10 логов", callback_data: "select_count_10" }],
+        [{ text: "20 логов", callback_data: "select_count_20" }],
         [{ text: "Все логи", callback_data: "select_count_all" }],
         [{ text: "↩️ Назад", callback_data: "main_menu" }],
       ],
@@ -87,7 +88,7 @@ function selectLogsCount(bot, chatId, messageId) {
 // Выбор типа логов
 function selectLogType(bot, chatId, messageId, count) {
   const countText = count === "all" ? "все" : count;
-  const text = `📊 Выберите тип логов (количество: ${countText}):`;
+  const text = `📊 Выберите тип логов (выбрано: ${countText}):`;
 
   bot.editMessageText(text, {
     chat_id: chatId,
@@ -106,18 +107,14 @@ function selectLogType(bot, chatId, messageId, count) {
 
 async function getAllLogs(bot, chatId, messageId, count, type) {
   try {
-    console.log("Getting logs with count:", count, "type:", type);
-
     const countNum = count === "all" ? null : parseInt(count);
     const getLogs = await Logs.getAllLogs({
       count: countNum,
       type: type === "all" ? null : type,
     });
 
-    console.log("Found logs:", getLogs.length);
-
     if (getLogs.length === 0) {
-      return bot.editMessageText("📭 Логов не найдено", {
+      bot.editMessageText("📭 Логов не найдено", {
         chat_id: chatId,
         message_id: messageId,
         reply_markup: {
@@ -127,77 +124,137 @@ async function getAllLogs(bot, chatId, messageId, count, type) {
           ],
         },
       });
+      return;
     }
 
-    // Простое текстовое форматирование с emoji и разделителями
+    // Форматируем логи с HTML-разметкой
     const formatLogEntry = (log, index) => {
-      const payloadText = log.payload
-        ? `════════════════════════════════════════\n${log.payload}\n════════════════════════════════════════`
-        : "❌ Нет данных";
-
-      const errorText = log.error
-        ? `════════════════════════════════════════\n${log.error}\n════════════════════════════════════════`
-        : "✅ Нет ошибок";
-
-      return `
-🔸 ЛОГ #${index + 1}
-─────────────────────────────
-🆔 ID: ${log.id}
-👤 Email: ${log.email || "❌ Нет email"}
-📋 Method: ${log.method}
-📍 From: ${log.from}
-✅ Status: ${log.status}
-
-📦 PAYLOAD:
-${payloadText}
-
-❌ ERROR:
-${errorText}
-─────────────────────────────
-`;
+      return `🔸 <b>Log ${index + 1}</b>
+┌─────────────────────────────
+│ 🆔 <b>ID:</b> <code>${escapeHtml(log.id.toString())}</code>
+│ 👤 <b>Email:</b> <code>${escapeHtml(log.email) || "No email"}</code>
+│ 📋 <b>Method:</b> <code>${escapeHtml(log.method)}</code>
+│ 📍 <b>From:</b> <code>${escapeHtml(log.from)}</code>
+│ ✅ <b>Status:</b> <code>${escapeHtml(log.status)}</code>
+│ 
+│ 📦 <b>Payload:</b>
+<pre><code>${escapeHtml(log.payload) || "No payload"}</code></pre>
+│ 
+│ ❌ <b>Error:</b>
+<pre><code>${escapeHtml(log.error) || "No errors"}</code></pre>
+└─────────────────────────────`;
     };
 
-    // Форматируем первые 2 лога для основного сообщения
+    // Функция для экранирования HTML
+    function escapeHtml(text) {
+      if (!text) return "";
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Первые 3 лога в основном сообщении
     const formattedLogs = getLogs
-      .slice(0, 2)
+      .slice(0, 3)
       .map((log, index) => formatLogEntry(log, index))
-      .join("\n");
+      .join("\n\n");
 
     const countText = count === "all" ? "все" : count;
     const typeText = type === "all" ? "всех типов" : type;
     const totalLogs = getLogs.length;
 
-    const text = `📊 ЛОГИ СЕРВЕРА
-─────────────────────────────
-Количество: ${countText}
-Тип: ${typeText}
-Всего найдено: ${totalLogs}
-─────────────────────────────
-${formattedLogs}`;
+    const text = `📊 <b>Логи сервера</b> (${countText} ${typeText})\n<b>Всего найдено:</b> ${totalLogs}\n\n${formattedLogs}`;
 
-    // Если логов больше 2, добавляем информацию
-    if (totalLogs > 2) {
-      const remaining = totalLogs - 2;
-      const additionalText = `\n\n📋 Показано 2 из ${totalLogs} логов\n▶️ Используйте меньшее количество для полного отображения`;
+    if (totalLogs > 3) {
+      const remaining = totalLogs - 3;
+      const additionalText = `\n\n📋 <i>И еще ${remaining} логов...</i>\n<code>Используйте меньшее количество для полного отображения</code>`;
 
       await bot.editMessageText(text + additionalText, {
         chat_id: chatId,
         message_id: messageId,
+        parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "3 лога", callback_data: "select_count_3" },
               { text: "5 логов", callback_data: "select_count_5" },
+              { text: "10 логов", callback_data: "select_count_10" },
             ],
             [
-              { text: "10 логов", callback_data: "select_count_10" },
+              { text: "20 логов", callback_data: "select_count_20" },
               { text: "Все логи", callback_data: "select_count_all" },
             ],
-            [{ text: "↩️ Назад", callback_data: "main_menu" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
           ],
         },
       });
     } else {
+      await bot.editMessageText(text, {
+        chat_id: chatId,
+        message_id: messageId,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
+            [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
+          ],
+        },
+      });
+    }
+
+    // Отправляем остальные логи отдельными сообщениями
+    if (totalLogs > 3) {
+      for (let i = 3; i < totalLogs; i += 2) {
+        const batch = getLogs.slice(i, i + 2);
+        const batchText = batch
+          .map((log, batchIndex) => formatLogEntry(log, i + batchIndex))
+          .join("\n\n");
+
+        await bot.sendMessage(chatId, batchText, {
+          parse_mode: "HTML",
+        });
+
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+  } catch (error) {
+    console.error("Error getting logs:", error);
+
+    // Fallback на простой текст
+    try {
+      const getLogs = await Logs.getAllLogs({
+        count: 5,
+        type: type === "all" ? null : type,
+      });
+
+      const simplifiedLogs = getLogs
+        .map((log, index) => {
+          return `🔸 Log ${index + 1}
+ID: ${log.id}
+Email: ${log.email || "No email"}
+Method: ${log.method}
+From: ${log.from}
+Status: ${log.status}
+Payload: ${
+            log.payload
+              ? log.payload.substring(0, 60) +
+                (log.payload.length > 60 ? "..." : "")
+              : "No payload"
+          }
+Error: ${
+            log.error
+              ? log.error.substring(0, 60) +
+                (log.error.length > 60 ? "..." : "")
+              : "No errors"
+          }
+────────────────────`;
+        })
+        .join("\n\n");
+
+      const text = `📊 Логи сервера\n\n${simplifiedLogs}`;
+
       await bot.editMessageText(text, {
         chat_id: chatId,
         message_id: messageId,
@@ -208,46 +265,19 @@ ${formattedLogs}`;
           ],
         },
       });
-    }
-
-    // Отправляем остальные логи по частям
-    if (totalLogs > 2) {
-      for (let i = 2; i < totalLogs; i += 2) {
-        const batch = getLogs.slice(i, i + 2);
-        const batchText = batch
-          .map((log, batchIndex) => formatLogEntry(log, i + batchIndex))
-          .join("\n");
-
-        await bot.sendMessage(
-          chatId,
-          `📋 Продолжение логов (${i + 1}-${Math.min(
-            i + 2,
-            totalLogs
-          )} из ${totalLogs}):\n${batchText}`
-        );
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
-    }
-  } catch (error) {
-    console.error("Error getting logs:", error);
-
-    // Простой fallback
-    await bot.editMessageText(
-      "❌ Ошибка при получении логов\n\nВозможно, слишком много данных. Попробуйте выбрать меньшее количество.",
-      {
+    } catch (fallbackError) {
+      console.error("Fallback error:", fallbackError);
+      await bot.editMessageText("❌ Ошибка при получении логов", {
         chat_id: chatId,
         message_id: messageId,
         reply_markup: {
           inline_keyboard: [
-            [
-              { text: "3 лога", callback_data: "select_count_3" },
-              { text: "5 логов", callback_data: "select_count_5" },
-            ],
+            [{ text: "🔄 Попробовать снова", callback_data: "get_logs" }],
             [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
           ],
         },
-      }
-    );
+      });
+    }
   }
 }
 
