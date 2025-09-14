@@ -66,18 +66,18 @@ function registerButtonHandlers(bot, userSessions, logSubscribers, sendLog) {
   console.log("✅ Обработчики кнопок зарегистрированы");
 }
 
-// Выбор количества логов
 function selectLogsCount(bot, chatId, messageId) {
   const text = `📊 Выберите количество логов:`;
 
   bot.editMessageText(text, {
     chat_id: chatId,
     message_id: messageId,
+    parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [
+        [{ text: "5 логов", callback_data: "select_count_5" }],
         [{ text: "10 логов", callback_data: "select_count_10" }],
-        [{ text: "50 логов", callback_data: "select_count_50" }],
-        [{ text: "100 логов", callback_data: "select_count_100" }],
+        [{ text: "20 логов", callback_data: "select_count_20" }],
         [{ text: "Все логи", callback_data: "select_count_all" }],
         [{ text: "↩️ Назад", callback_data: "main_menu" }],
       ],
@@ -127,62 +127,63 @@ async function getAllLogs(bot, chatId, messageId, count, type) {
       return;
     }
 
-    // Функция для экранирования специальных символов MarkdownV2
-    const escapeMarkdownV2 = (text) => {
-      if (!text) return "";
-      return text.replace(/[_*[\]()~`>#+\-=|{}.!]/g, "\\$&");
+    // Форматируем логи с HTML-разметкой
+    const formatLogEntry = (log, index) => {
+      return `🔸 <b>Log ${index + 1}</b>
+┌─────────────────────────────
+│ 🆔 <b>ID:</b> <code>${escapeHtml(log.id.toString())}</code>
+│ 👤 <b>Email:</b> <code>${escapeHtml(log.email) || "No email"}</code>
+│ 📋 <b>Method:</b> <code>${escapeHtml(log.method)}</code>
+│ 📍 <b>From:</b> <code>${escapeHtml(log.from)}</code>
+│ ✅ <b>Status:</b> <code>${escapeHtml(log.status)}</code>
+│ 
+│ 📦 <b>Payload:</b>
+<pre><code>${escapeHtml(log.payload) || "No payload"}</code></pre>
+│ 
+│ ❌ <b>Error:</b>
+<pre><code>${escapeHtml(log.error) || "No errors"}</code></pre>
+└─────────────────────────────`;
     };
 
-    // Форматируем первые 5 логов для основного сообщения
-    const formattedLogs = getLogs
-      .slice(0, 5)
-      .map((log, index) => {
-        const escapedPayload = escapeMarkdownV2(log.payload);
-        const escapedError = escapeMarkdownV2(log.error);
+    // Функция для экранирования HTML
+    function escapeHtml(text) {
+      if (!text) return "";
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
 
-        return `🔸 Log #${index + 1}
-┌─────────────────────────────
-│ 🆔 ID: ${escapeMarkdownV2(log.id.toString())}
-│ 👤 Email: ${escapeMarkdownV2(log.email) || "No email"}
-│ 📋 Method: ${escapeMarkdownV2(log.method)}
-│ 📍 From: ${escapeMarkdownV2(log.from)}
-│ ✅ Status: ${escapeMarkdownV2(log.status)}
-│ 
-│ 📦 Payload:
-\\\`\\\`\\\`
-${escapedPayload}
-\\\`\\\`\\\`
-│ 
-│ ❌ Error:
-\\\`\\\`\\\`
-${escapedError || "No errors"}
-\\\`\\\`\\\`
-└─────────────────────────────`;
-      })
+    // Первые 3 лога в основном сообщении
+    const formattedLogs = getLogs
+      .slice(0, 3)
+      .map((log, index) => formatLogEntry(log, index))
       .join("\n\n");
 
     const countText = count === "all" ? "все" : count;
     const typeText = type === "all" ? "всех типов" : type;
     const totalLogs = getLogs.length;
 
-    const text = `📊 Логи сервера \\(${countText} ${typeText}\\)\nВсего найдено: ${totalLogs}\n\n${formattedLogs}`;
+    const text = `📊 <b>Логи сервера</b> (${countText} ${typeText})\n<b>Всего найдено:</b> ${totalLogs}\n\n${formattedLogs}`;
 
-    if (totalLogs > 5) {
-      const remaining = totalLogs - 5;
-      const additionalText = `\n\n📋 И еще ${remaining} логов\\.\\.\\.\n_Используйте меньшее количество для полного отображения_`;
+    if (totalLogs > 3) {
+      const remaining = totalLogs - 3;
+      const additionalText = `\n\n📋 <i>И еще ${remaining} логов...</i>\n<code>Используйте меньшее количество для полного отображения</code>`;
 
       await bot.editMessageText(text + additionalText, {
         chat_id: chatId,
         message_id: messageId,
-        parse_mode: "MarkdownV2",
+        parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [
+              { text: "5 логов", callback_data: "select_count_5" },
               { text: "10 логов", callback_data: "select_count_10" },
-              { text: "50 логов", callback_data: "select_count_50" },
             ],
             [
-              { text: "100 логов", callback_data: "select_count_100" },
+              { text: "20 логов", callback_data: "select_count_20" },
               { text: "Все логи", callback_data: "select_count_all" },
             ],
             [{ text: "🏠 Главное меню", callback_data: "main_menu" }],
@@ -193,7 +194,7 @@ ${escapedError || "No errors"}
       await bot.editMessageText(text, {
         chat_id: chatId,
         message_id: messageId,
-        parse_mode: "MarkdownV2",
+        parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [{ text: "🔄 Новый запрос", callback_data: "get_logs" }],
@@ -203,80 +204,56 @@ ${escapedError || "No errors"}
       });
     }
 
-    // Если логов больше 5, отправляем остальные отдельными сообщениями
-    if (totalLogs > 5) {
-      for (let i = 5; i < totalLogs; i += 3) {
-        const batch = getLogs.slice(i, i + 3);
+    // Отправляем остальные логи отдельными сообщениями
+    if (totalLogs > 3) {
+      for (let i = 3; i < totalLogs; i += 2) {
+        const batch = getLogs.slice(i, i + 2);
         const batchText = batch
-          .map((log, batchIndex) => {
-            const escapedPayload = escapeMarkdownV2(log.payload);
-            const escapedError = escapeMarkdownV2(log.error);
-
-            return `🔸 Log #${i + batchIndex + 1}
-┌─────────────────────────────
-│ 🆔 ID: ${escapeMarkdownV2(log.id.toString())}
-│ 👤 Email: ${escapeMarkdownV2(log.email) || "No email"}
-│ 📋 Method: ${escapeMarkdownV2(log.method)}
-│ 📍 From: ${escapeMarkdownV2(log.from)}
-│ ✅ Status: ${escapeMarkdownV2(log.status)}
-│ 
-│ 📦 Payload:
-\\\`\\\`\\\`
-${escapedPayload}
-\\\`\\\`\\\`
-│ 
-│ ❌ Error:
-\\\`\\\`\\\`
-${escapedError || "No errors"}
-\\\`\\\`\\\`
-└─────────────────────────────`;
-          })
+          .map((log, batchIndex) => formatLogEntry(log, i + batchIndex))
           .join("\n\n");
 
         await bot.sendMessage(chatId, batchText, {
-          parse_mode: "MarkdownV2",
+          parse_mode: "HTML",
         });
 
-        // Задержка между сообщениями
         await new Promise((resolve) => setTimeout(resolve, 300));
       }
     }
   } catch (error) {
     console.error("Error getting logs:", error);
 
-    // Простой текст без Markdown в случае ошибки
+    // Fallback на простой текст
     try {
       const getLogs = await Logs.getAllLogs({
-        count: count === "all" ? 10 : parseInt(count), // Ограничиваем для простого формата
+        count: 5,
         type: type === "all" ? null : type,
       });
 
       const simplifiedLogs = getLogs
-        .slice(0, 8)
         .map((log, index) => {
-          const shortPayload = log.payload
-            ? log.payload.substring(0, 80) +
-              (log.payload.length > 80 ? "..." : "")
-            : "No payload";
-          const shortError = log.error
-            ? log.error.substring(0, 80) + (log.error.length > 80 ? "..." : "")
-            : "No errors";
-
-          return `🔸 Log #${index + 1}
+          return `🔸 Log ${index + 1}
 ID: ${log.id}
 Email: ${log.email || "No email"}
 Method: ${log.method}
 From: ${log.from}
 Status: ${log.status}
-Payload: ${shortPayload}
-Error: ${shortError}
+Payload: ${
+            log.payload
+              ? log.payload.substring(0, 60) +
+                (log.payload.length > 60 ? "..." : "")
+              : "No payload"
+          }
+Error: ${
+            log.error
+              ? log.error.substring(0, 60) +
+                (log.error.length > 60 ? "..." : "")
+              : "No errors"
+          }
 ────────────────────`;
         })
         .join("\n\n");
 
-      const countText = count === "all" ? "первые 10" : count;
-      const typeText = type === "all" ? "всех типов" : type;
-      const text = `📊 Логи сервера (${countText} ${typeText})\n\n${simplifiedLogs}`;
+      const text = `📊 Логи сервера\n\n${simplifiedLogs}`;
 
       await bot.editMessageText(text, {
         chat_id: chatId,
