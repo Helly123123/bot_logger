@@ -2,31 +2,42 @@ const pool = require("../config/db");
 
 class Logs {
 
-  static async getAllLogs(server) {
-
-    console.log(server)
-     if (server === 'be_pay') {
-       const [rows] = await pool.query("SELECT * FROM be_pay_logs");
-
-       return {
-        rows,
-      }
-     } else if (server === 'frontend_vue') {
-       const [rows] = await pool.query("SELECT * FROM frontend_vue_logs");
-      console.log(rows)
-       return {
-        rows,
-      }
-     } else if (server === 'be_auth') {
-       const [rows] = await pool.query("SELECT * FROM be_auth_logs"
-      );
-      
-       return {
-        rows,
-      }
-     }
-      
+ static async getAllLogs(server, domain) {
+    console.log('Server:', server, 'Domain:', domain);
+    
+    let query = "";
+    let params = [];
+    
+    if (server === 'be_pay') {
+        if (domain) {
+            query = "SELECT * FROM be_pay_logs WHERE server = ?";
+            params = [domain];
+        } else {
+            query = "SELECT * FROM be_pay_logs";
+        }
+    } else if (server === 'frontend_vue') {
+        if (domain) {
+            query = "SELECT * FROM frontend_vue_logs WHERE server = ?";
+            params = [domain];
+        } else {
+            query = "SELECT * FROM frontend_vue_logs";
+        }
+    } else if (server === 'be_auth') {
+        if (domain) {
+            query = "SELECT * FROM be_auth_logs WHERE server = ?";
+            params = [domain];
+        } else {
+            query = "SELECT * FROM be_auth_logs";
+        }
+    } else {
+        throw new Error(`Unknown server: ${server}`);
     }
+    
+    const [rows] = await pool.query(query, params);
+    console.log('Found rows:', rows.length);
+    
+    return { rows };
+}
 
   // static async getAllLogs(options = {}) {
   //   const { count = null, type = null } = options;
