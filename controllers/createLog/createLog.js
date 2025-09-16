@@ -4,7 +4,7 @@ const { sendServerLog } = require("../../bots/bot");
 
 module.exports = async (req, res) => {
   try {
-    const { level, payload, error, message, method, endpoint, status } = req.body;
+    const { level, payload, error, message, method, domen, endpoint, status } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -33,6 +33,7 @@ module.exports = async (req, res) => {
       endpoint: endpoint || req.url,
       status: status || 200,
       server: checkToken.brand_slug,
+      domen: domen,
       email: checkToken.email
     };
 
