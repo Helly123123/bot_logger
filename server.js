@@ -2,8 +2,7 @@ const app = require("./app");
 const initAuthDatabase = require("./database/initDatabase");
 require("dotenv").config();
 
-// Импортируем бота - он автоматически запустится при импорте
-require("./bots/bot");
+// require("./bots/bot");
 
 const PORT = process.env.PORT || 3000;
 

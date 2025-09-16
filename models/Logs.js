@@ -31,31 +31,36 @@ class Logs {
     }
   }
 
-  static async create(userData) {
-    const { email, method, payload, from, status, error } = userData;
+    static async create(userData) {
+    const { email, method, payload, status, error, server, level, message, endpoint } = userData;
 
     function generateSixDigitId() {
       return Math.floor(100000 + Math.random() * 900000);
     }
 
     const id = generateSixDigitId();
+    const timestamp = Math.floor(Date.now() / 1000); // Текущее время в Unix timestamp
 
     const [result] = await pool.query(
       `INSERT INTO be_pay_logs 
-      (id, email, method, payload, \`from\`, status, error) 
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [id, email, method, payload, from, status, error || ""]
+      (id, server, email, timestamp, method, payload, status, error, level, message, endpoint) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, server, email, timestamp, method, payload,  status, error || "", level || "INFO", message || "", endpoint || ""]
     );
 
     console.log(result);
     return {
       id,
+      server,
       email,
+      timestamp,
       method,
       payload,
-      from,
       status,
       error,
+      level,
+      message,
+      endpoint
     };
   }
 }

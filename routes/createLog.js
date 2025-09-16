@@ -5,6 +5,6 @@ const createLog = require("../controllers/createLog/createLog");
 const checkToken = require("../middleware/checkTokenMiddleware.js");
 const createLogMiddleware = require("../middleware/createLogMiddleware.js");
 
-router.post("/createLog", createLogMiddleware, checkToken, createLog);
+router.post("/createLog",  checkToken, createLog);
 
 module.exports = router;
