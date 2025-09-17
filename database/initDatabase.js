@@ -19,7 +19,7 @@ async function initializeDatabase() {
 
     await connection.query(`USE ${dbName}`);
 
-   await connection.query(`
+    await connection.query(`
   CREATE TABLE IF NOT EXISTS be_pay_logs (
     id VARCHAR(6) UNIQUE,
     server VARCHAR(255),
@@ -35,7 +35,7 @@ async function initializeDatabase() {
   )
 `);
 
-   await connection.query(`
+    await connection.query(`
   CREATE TABLE IF NOT EXISTS frontend_vue_logs (
     id VARCHAR(6) UNIQUE,
     server VARCHAR(255),
@@ -50,13 +50,14 @@ async function initializeDatabase() {
   )
 `);
 
-   await connection.query(`
+    await connection.query(`
   CREATE TABLE IF NOT EXISTS be_auth_logs (
     id VARCHAR(6) UNIQUE,
     server VARCHAR(255),
     email VARCHAR(255),
     timestamp INT,
     level VARCHAR(255),
+    payload TEXT,  
     message TEXT,
     method VARCHAR(255),
     endpoint VARCHAR(255),
