@@ -1,10 +1,11 @@
 const Logs = require("../../models/Logs");
 const { decodeJwtAndGetUserId } = require("../../utils/jwtDecoder");
-const { sendServerLog } = require("../../bots/bot"); 
+const { sendServerLog } = require("../../bots/bot");
 
 module.exports = async (req, res) => {
   try {
-    const { level, payload, error, message, method, domen, endpoint, status } = req.body;
+    const { level, payload, error, message, method, domain, endpoint, status } =
+      req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -13,7 +14,7 @@ module.exports = async (req, res) => {
         message: "Authorization header missing",
       });
     }
-    
+
     const token = authHeader.split(" ")[1];
     const checkToken = await decodeJwtAndGetUserId(token);
 
@@ -23,7 +24,7 @@ module.exports = async (req, res) => {
         message: "Invalid token",
       });
     }
-      
+
     const logData = {
       level: level || (status === "error" ? "ERROR" : "INFO"),
       payload: typeof payload === "string" ? payload : JSON.stringify(payload),
@@ -33,8 +34,8 @@ module.exports = async (req, res) => {
       endpoint: endpoint || req.url,
       status: status || 200,
       server: checkToken.brand_slug,
-      domen: domen,
-      email: checkToken.email
+      domain: domain,
+      email: checkToken.email,
     };
 
     const createLog = await Logs.create(logData);
