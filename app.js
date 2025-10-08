@@ -12,10 +12,12 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const getAllLogs = require("./routes/getLogs.js");
+const login = require("./routes/login.js");
 const createLog = require("./routes/createLog.js");
 
 app.use("/api/", createLog);
 app.use("/api/", getAllLogs);
+app.use("/api/", login);
 
 app.get("/", (req, res) => {
   res.json({ message: "API is working" });

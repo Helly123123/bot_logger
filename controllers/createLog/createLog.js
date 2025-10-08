@@ -1,6 +1,6 @@
 const Logs = require("../../models/Logs");
 const { decodeJwtAndGetUserId } = require("../../utils/jwtDecoder");
-const { sendServerLog } = require("../../bots/bot");
+const { sendServerLog, sendErrorToGroup } = require("../../bots/bot");
 
 module.exports = async (req, res) => {
   try {
@@ -25,36 +25,74 @@ module.exports = async (req, res) => {
       });
     }
 
+    // 🔴 ИСПРАВЛЕНИЕ: Правильно обрабатываем payload
+    let processedPayload = "";
+    if (payload) {
+      if (typeof payload === "string") {
+        processedPayload = payload;
+      } else if (typeof payload === "object") {
+        try {
+          processedPayload = JSON.stringify(payload);
+        } catch (stringifyError) {
+          processedPayload = "Unable to stringify payload object";
+          console.warn(
+            "⚠️ Не удалось преобразовать payload в JSON:",
+            stringifyError
+          );
+        }
+      }
+    }
+
     const logData = {
       level: level || (status === "error" ? "ERROR" : "INFO"),
-      payload: typeof payload === "string" ? payload : JSON.stringify(payload),
+      payload: processedPayload, // 🔴 Используем обработанный payload
       error: error || "",
       message: message || "",
       method: method || req.method,
       endpoint: endpoint || req.url,
       status: status || 200,
       server: checkToken.brand_slug,
-      domain: domain,
+      domain: domain || "",
       email: checkToken.email,
     };
 
-    const createLog = await Logs.create(logData);
-    console.log(createLog);
-
-    // Раскомментируйте если нужно отправлять в бота
-    /*
-    sendServerLog({
-      id: createLog.id,
-      email: checkToken.email,
-      method: method,
-      from: checkToken.brand_slug,
-      status: status,
-      payload: typeof payload === "string" ? payload : JSON.stringify(payload, null, 2),
-      error: error || "",
-      level: level || (status === "error" ? "ERROR" : "INFO"),
-      timestamp: createLog.timestamp
+    console.log("📝 Создаем лог с данными:", {
+      method: logData.method,
+      endpoint: logData.endpoint,
+      payloadLength: processedPayload.length,
+      status: logData.status,
     });
-    */
+
+    // Сохраняем лог в базу
+    const createLog = await Logs.create(logData);
+    console.log("✅ Лог создан, ID:", createLog.id);
+
+    // Если статус ошибки - отправляем в Telegram группу
+    if (status === "ERROR") {
+      console.log("🚨 Обнаружена ошибка, отправляем в группу...");
+
+      sendErrorToGroup({
+        ...logData,
+        id: createLog.id,
+        timestamp: new Date(),
+      })
+        .then((result) => {
+          if (result && result.success) {
+            console.log(
+              `✅ Ошибка отправлена в Telegram группу. ID сообщения: ${result.messageId}`
+            );
+          } else {
+            console.log(
+              `⚠️ Не удалось отправить ошибку в группу: ${
+                result?.reason || "unknown error"
+              }`
+            );
+          }
+        })
+        .catch((err) => {
+          console.error("❌ Ошибка при отправке в группу:", err.message);
+        });
+    }
 
     return res.status(200).json({
       success: true,
@@ -62,25 +100,15 @@ module.exports = async (req, res) => {
       message: "Лог успешно создан",
     });
   } catch (error) {
-    console.error("Ошибка создания лога:", error);
-
-    // Отправляем лог об ошибке
-    /*
-    sendServerLog({
-      id: "N/A",
-      email: "system",
-      method: req.method,
-      from: "api",
-      status: "error",
-      payload: JSON.stringify({
-        url: req.url,
-        body: req.body,
-      }, null, 2),
-      error: error.message,
-      level: "ERROR",
-      timestamp: Math.floor(Date.now() / 1000)
+    console.error("❌ Ошибка создания лога:", error.message);
+    console.error("📋 Детали ошибки:", {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState,
     });
-    */
+
+    // Логируем тело запроса для отладки
+    console.log("📦 Тело запроса:", JSON.stringify(req.body, null, 2));
 
     res.status(500).json({
       success: false,
