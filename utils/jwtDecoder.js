@@ -1,45 +1,53 @@
 const jwt = require("jsonwebtoken");
 
 /**
- * РђСЃРёРЅС…СЂРѕРЅРЅРѕ РґРµРєРѕРґРёСЂСѓРµС‚ JWT С‚РѕРєРµРЅ Рё РІРѕР·РІСЂР°С‰Р°РµС‚ user_id
- * @param {string} token - JWT С‚РѕРєРµРЅ
+ * Асинхронно декодирует JWT токен и возвращает user_id
+ * @param {string} token - JWT токен
  * @returns {Promise<{success: boolean, user_id?: string, error?: string}>}
  */
 const decodeJwtAndGetUserId = async (token) => {
-  const secret =
-    "MFjuiKA2hGwY0ia97pcirb1POrHBJoF1D2mTprbGNNoJoQw9tn3JbILOQom88qpxpebDPo07pLcbvTCy7YUrTvviAQH0aublhuwgBH43YqYL6pq4cEhCrCsKosUnE2U6UVbwZiOyVn4ZHthzSP2vFvlz3k8bqoNkp7ab4h1TnS4QAWhakYs6h6TcOWXtHDYt3XWz14Twuh58auRbwIYa0aIR9AmlGPPaYpy0HfaoIHzRbCwkq8kmWeAPxBoyTx4L";
-
   return new Promise((resolve) => {
     try {
       if (!token || typeof token !== "string") {
-        throw new Error("РўРѕРєРµРЅ РЅРµ РїСЂРµРґРѕСЃС‚Р°РІР»РµРЅ");
+        throw new Error("Токен не предоставлен");
       }
 
-      // РСЃРїРѕР»СЊР·СѓРµРј verify СЃ РєРѕР»Р±СЌРєРѕРј РґР»СЏ Р°СЃРёРЅС…СЂРѕРЅРЅРѕР№ РѕР±СЂР°Р±РѕС‚РєРё
-      jwt.verify(token, secret, { algorithms: ["HS256"] }, (err, decoded) => {
-        if (err) {
-          throw err;
+      // Используем decode вместо verify - БЕЗ ПРОВЕРКИ ПОДПИСИ
+      const decoded = jwt.decode(token, { complete: true });
+
+      if (!decoded) {
+        throw new Error("Неверный фортокена");
+      }
+
+      const payload = decoded.payload;
+
+      console.log(payload, "decoded payload");
+
+      if (!payload.user_id) {
+        throw new Error("Токен не содержит user_id");
+      }
+
+      // Проверяем срок действия (exp) если он есть
+      if (payload.exp) {
+        const currentTime = Math.floor(Date.now() / 1000);
+        if (currentTime > payload.exp) {
+          throw new Error("Токен просрочен");
         }
+      }
 
-        if (!decoded.user_id) {
-          throw new Error("РўРѕРєРµРЅ РЅРµ СЃРѕРґРµСЂР¶РёС‚ user_id");
-        }
-
-        console.log(decoded, "decoded");
-
-        resolve({
-          success: true,
-          user_id: decoded.user_id,
-          email: decoded.email,
-          brand_slug: decoded.brand_slug,
-        });
+      resolve({
+        success: true,
+        user_id: payload.user_id,
+        email: payload.email,
+        brand_slug: payload.brand_slug,
+        exp: payload.exp,
       });
     } catch (error) {
       let errorMessage;
-      if (error.name === "TokenExpiredError") {
-        errorMessage = "РўРѕРєРµРЅ РїСЂРѕСЃСЂРѕС‡РµРЅ";
-      } else if (error.name === "JsonWebTokenError") {
-        errorMessage = "РќРµРІРµСЂРЅС‹Р№ С‚РѕРєРµРЅ РёР»Рё РїРѕРґРїРёСЃСЊ";
+      if (error.message === "Токен просрочен") {
+        errorMessage = "Токен просрочен";
+      } else if (error.message === "Неверный фортокена") {
+        errorMessage = "Неверный токен";
       } else {
         errorMessage = error.message;
       }

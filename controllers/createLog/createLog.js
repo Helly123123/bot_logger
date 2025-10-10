@@ -1,11 +1,21 @@
 const Logs = require("../../models/Logs");
 const { decodeJwtAndGetUserId } = require("../../utils/jwtDecoder");
+const { getTypeLog } = require("../../utils/getTypeLog");
 const { sendServerLog, sendErrorToGroup } = require("../../bots/bot");
 
 module.exports = async (req, res) => {
   try {
-    const { level, payload, error, message, method, domain, endpoint, status } =
-      req.body;
+    const {
+      level,
+      payload,
+      error,
+      message,
+      serverDomain,
+      method,
+      domain,
+      endpoint,
+      status,
+    } = req.body;
 
     const authHeader = req.headers.authorization;
     if (!authHeader) {
@@ -25,7 +35,6 @@ module.exports = async (req, res) => {
       });
     }
 
-    // 🔴 ИСПРАВЛЕНИЕ: Правильно обрабатываем payload
     let processedPayload = "";
     if (payload) {
       if (typeof payload === "string") {
@@ -45,23 +54,19 @@ module.exports = async (req, res) => {
 
     const logData = {
       level: level || (status === "error" ? "ERROR" : "INFO"),
-      payload: processedPayload, // 🔴 Используем обработанный payload
+      payload: processedPayload,
       error: error || "",
       message: message || "",
       method: method || req.method,
       endpoint: endpoint || req.url,
       status: status || 200,
-      server: checkToken.brand_slug,
+      server: serverDomain,
+      type: getTypeLog(serverDomain),
       domain: domain || "",
       email: checkToken.email,
     };
 
-    console.log("📝 Создаем лог с данными:", {
-      method: logData.method,
-      endpoint: logData.endpoint,
-      payloadLength: processedPayload.length,
-      status: logData.status,
-    });
+    console.log("log", logData);
 
     // Сохраняем лог в базу
     const createLog = await Logs.create(logData);

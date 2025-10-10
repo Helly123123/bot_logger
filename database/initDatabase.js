@@ -52,6 +52,22 @@ async function initializeDatabase() {
 `);
 
     await connection.query(`
+  CREATE TABLE IF NOT EXISTS frontend_vue_dev_logs (
+    id VARCHAR(6) UNIQUE,
+    server VARCHAR(255),
+    email VARCHAR(255),
+    timestamp BIGINT, 
+    level VARCHAR(255),
+    payload TEXT,
+    error TEXT,
+    message TEXT,
+    method VARCHAR(255),
+    endpoint VARCHAR(255),
+    status INT
+  )
+`);
+
+    await connection.query(`
   CREATE TABLE IF NOT EXISTS be_auth_logs (
     id VARCHAR(6) UNIQUE,
     server VARCHAR(255),
