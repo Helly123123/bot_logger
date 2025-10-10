@@ -4,27 +4,7 @@ class Logs {
   static async getAllLogs(server, domain) {
     console.log("Server:", server, "Domain:", domain);
 
-    // Проверка на валидность server
-    if (!server || typeof server !== "string") {
-      throw new Error("Server parameter is required and must be a string");
-    }
-
-    const tableMap = {
-      be_pay: "be_pay_logs",
-      frontend_vue: "frontend_vue_logs",
-      be_auth: "be_auth_logs",
-    };
-
-    if (!tableMap[server]) {
-      throw new Error(
-        `Unknown server: ${server}. Available: ${Object.keys(tableMap).join(
-          ", "
-        )}`
-      );
-    }
-
-    const tableName = tableMap[server];
-    let query = `SELECT * FROM ${tableName}`;
+    let query = `SELECT * FROM ${server}`;
     let params = [];
 
     if (domain && typeof domain === "string") {
